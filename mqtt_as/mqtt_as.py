@@ -602,7 +602,6 @@ class MQTTClient(MQTT_base):
             self._close()
             self._in_connect = False  # Caller may run .isconnected()
             raise
-        clean = self._clean if self._has_connected else self._clean_init
         self.rcv_pids.clear()
         # If we get here without error broker/LAN must be up.
         self._isconnected = True
@@ -610,9 +609,8 @@ class MQTTClient(MQTT_base):
         asyncio.create_task(self._wifi_handler(True))  # User handler.
         if not self._has_connected:
             self._has_connected = True  # Use normal clean flag on reconnect.
-            asyncio.create_task(
-                self._keep_connected()
-            )  # Runs forever unless user issues .disconnect()
+            asyncio.create_task(self._keep_connected())
+            # Runs forever unless user issues .disconnect()
 
         asyncio.create_task(self._handle_msg())  # Task quits on connection fail.
         self._tasks.append(asyncio.create_task(self._keep_alive()))
