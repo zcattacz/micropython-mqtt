@@ -27,9 +27,10 @@ application level.
  2. [Getting started](./README.md#2-getting_started)  
   2.1 [Program files](./README.md#21-program-files)  
   2.2 [Installation](./README.md#22-installation)  
-  2.3 [Example Usage](./README.md#23-example-usage)  
+  2.3 [Example Usage](./README.md#23-example-usage) Using the event interface (unavail in V6).  
+  2.4 [Usage with callbacks](./README.md#24-usage-with-callbacks)  
  3. [MQTTClient class](./README.md#3-mqttclient-class)  
-  3.1 [Constructor](./README.md#31-constructor)  
+  3.1 [Constructor](./README.md#31-constructor) Describes the MQTT configuration dictionary.  
   3.2 [Methods](./README.md#32-methods)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.1 [connect](./README.md#321-connect)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.2 [publish](./README.md#322-publish)  
@@ -55,6 +56,9 @@ application level.
   5.1 [deepsleep](./README.md#51-deepsleep)  
   5.2 [lightsleep and disconnect](./README.md#52-lightsleep-and-disconnect)  
  6. [References](./README.md#6-references)  
+ 7. [Connect Error Codes](./README.md#7-connect-error-codes)  
+ 8. [Hive MQ](./README.md#8-hive-mq) A secure, free, broker.  
+ 9. [The ssl_params dictionary](./README.md#9-the-ssl_params-dictionary) Plus user notes on SSL/TLS.  
 
 ## 1.1 Rationale
 
@@ -78,6 +82,11 @@ The official "robust" MQTT client has the following limitations.
  5. Its partial qos == 1 support and inability reliably to resume after a WiFi
  outage places a limit on the usable WiFi range. To achieve reliable operation
  a client must be well within range of the access point (AP).
+
+ 6. As a synchronous solution it has no mechanism to support the "keepalive"
+ mechanism of MQTT. This prevents the "last will" system from working. It also
+ makes subscribe-only clients problematic: the broker has no means of "knowing"
+ whether the client is still connected.
 
 This module aims to address these issues, at the cost of significant code size.
 
@@ -120,7 +129,7 @@ Initial development was by Peter Hinch. Thanks are due to Kevin Köck for
 providing and testing a number of bugfixes and enhancements. Also to other
 contributors, some mentioned below.
 
-12 Nov 2022 V0.7.0 Provide alternative Event interface (callback-free).  
+12 Nov 2022 V0.7.0 Provide alternative callback-free Event interface.  
 2 Nov 2022 Rename `config.py` to `mqtt_local.py`, doc improvements.  
 8 Aug 2022 V0.6.6 Support unsubscribe (courtesy of Kevin Köck's fork).  
 11 July 2022 V0.6.5 Support RP2 Pico W  
@@ -176,6 +185,12 @@ message length is limited by available RAM. The actual limit will depend on the
 platform and user code but it is wise to design on the basis of a maximum of
 around 1KiB.
 
+Avoid unrealistic expectations of performance: latency can be significant,
+especially when using a TLS connection to a broker located on the internet.
+With a non-encrypted connection to a local broker it is feasible to use one
+MicroPython client to control another. I haven't measured latency but I would
+guess at ~100ms. 
+
 Some platforms - notably ESP32 - are unhelpful when dealing with gross errors
 such as incorrect WiFi credentials. Initial connection will only fail after a
 one minute timeout. Other platforms enable an immediate bail-out.
@@ -186,11 +201,13 @@ one minute timeout. Other platforms enable an immediate bail-out.
 
 ## 2.1 Program files
 
-### Required files
+### Required file
 
  1. `mqtt_as.py` The main module.
- 2. `mqtt_local.py` Used by demos to store local configuration details: see
- below.
+
+### Required by demo scripts
+
+ 1. `mqtt_local.py` Holds local configuration details such as WiFi credentials.
 
 ### Test/demo scripts
 
@@ -210,13 +227,13 @@ one minute timeout. Other platforms enable an immediate bail-out.
 
 ### Configuration
 
-The MQTT client is configured using a dictionary named `config` and defined in
-[MQTTClient class](./README.md#3-mqttclient-class). The user can populate this
-in any manner. The approach used in the test scripts is as follows. The main
-`mqtt_as.py` initialises `config` with typical defaults. Then `mqtt_local.py`
-adds local settings common to all nodes, e.g. WiFi credentials and broker
-details. Finally the application adds application specific settings such as
-subscriptions.
+The MQTT client is configured using a dictionary. An instance named `config`
+is defined in the [MQTTClient class](./README.md#3-mqttclient-class) and
+populated with common default values. The user can populate this in any manner.
+The approach used in the test scripts is as follows. The main `mqtt_as.py`
+module instantiates `config` with typical defaults. Then `mqtt_local.py` adds
+local settings common to all nodes, e.g. WiFi credentials and broker details.
+Finally the application adds application specific settings like subscriptions.
 
 In a typical project `mqtt_local.py` will be edited then deployed to all nodes.
 
@@ -247,12 +264,28 @@ the filesystem for ease of making changes.
 On other platforms simply copy the Python source to the filesystem (items 1 and
 2 above as a minimum).
 
+If an application is to auto-run on power-up it can be necessary to add a short
+delay in main.py:
+```python
+import time
+time.sleep(5)  # Could probably be shorter
+import range  # Your application
+```
+This is platform dependent and gives the hardware time to initialise.
+
 ## 2.3 Example Usage
 
-The following illustrates the library's use. If a PC client publishes a message
-with the topic `foo_topic` the topic and message are printed. The code
-periodically publishes an incrementing count under the topic `result`.
+The library offers two alternative ways to handle events such as the arrival of
+a message. One uses traditional callbacks. The following uses `Event` instances
+and an asynchronous iterator. If a PC client publishes a message with the topic
+`foo_topic` the topic and message are printed. The code periodically publishes
+an incrementing count under the topic `result`.
 
+Not available in V6
+
+## 2.4 Usage with callbacks
+
+The alternative callback-based interface may be run as follows:
 ```python
 from mqtt_as import MQTTClient, config
 import uasyncio as asyncio
@@ -260,7 +293,7 @@ import uasyncio as asyncio
 # Local configuration
 config['ssid'] = 'your_network_name'  # Optional on ESP8266
 config['wifi_pw'] = 'your_password'
-config['server'] '192.168.0.10'  # Change to suit e.g. 'iot.eclipse.org'
+config['server'] = '192.168.0.10'  # Change to suit e.g. 'iot.eclipse.org'
 
 def callback(topic, msg, retained):
     print((topic, msg, retained))
@@ -288,19 +321,9 @@ try:
 finally:
     client.close()  # Prevent LmacRxBlk:1 errors
 ```
-
-The code may be tested by running `pubtest` in one terminal and, in another,
+As above, testing is done by running `pubtest` in one terminal and, in another,
 `mosquitto_sub -h 192.168.0.10 -t result` (change the IP address to match your
 broker).
-
-If an application is to auto-run on power-up it can be necessary to add a short
-delay in main.py:
-```python
-import time
-time.sleep(5)  # Could probably be shorter
-import range  # Your application
-```
-This is platform dependent and gives the hardware time to initialise.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -310,11 +333,12 @@ The module provides a single class: `MQTTClient`.
 
 ## 3.1 Constructor
 
-This takes a dictionary as argument. The default is `mqtt_as.config`. Normally
-an application imports this and modifies selected entries as required. Entries
-are as follows (default values shown in []):
+This takes a dictionary as argument. The default is `mqtt_as.config` which is
+populated with default values listed below. A typical application imports this
+and modifies selected entries as required. Entries are as follows (default
+values shown in []):
 
-**WiFi Credentials**
+### WiFi Credentials
 
 These are required for platforms other than ESP8266 where they are optional. If
 the ESP8266 has previously connected to the required LAN the chip can reconnect
@@ -325,7 +349,7 @@ attempt to connect to the specified LAN.
 '**ssid**' [`None`]  
 '**wifi_pw**' [`None`]  
 
-**MQTT parameters**
+### MQTT parameters
 
 '**client_id**' [auto-generated unique ID] Must be a `bytes` instance.  
 '**server**' [`None`] Broker IP address (mandatory).  
@@ -335,8 +359,7 @@ attempt to connect to the specified LAN.
 '**keepalive**' [`60`] Period (secs) before broker regards client as having died.  
 '**ping_interval**' [`0`] Period (secs) between broker pings. 0 == use default.  
 '**ssl**' [`False`] If `True` use SSL.  
-'**ssl_params**' [`{}`] See [this post](https://forum.micropython.org/viewtopic.php?f=18&t=11906#p65746)
-for details on how to populate this dictionary.  
+'**ssl_params**' [`{}`] See below.  
 '**response_time**' [`10`] Time in which server is expected to respond (s). See note
 below.  
 '**clean_init**' [`True`] Clean Session state on initial connection.  
@@ -391,6 +414,14 @@ out of service for a long time. This can have the consequences described above.
 See MQTT spec 3.1.2.4. This is decribe further below in
 [section 4.4.2 behaviour on power up](./README.md#442-behaviour-on-power-up).
 
+### SSL/TLS
+
+Populating the `ssl_params` dictionary is something of a black art. Some sites
+require certificates: see [this post](https://forum.micropython.org/viewtopic.php?f=18&t=11906#p65746)
+for details on how to specify these. See [Hive MQ](./README.md#8-hive-mq) for
+details of connecting to a secure, free broker service. This may provide hints
+for connecting to other TLS brokers.
+
 ###### [Contents](./README.md#1-contents)
 
 ## 3.2 Methods
@@ -410,8 +441,9 @@ Keyword only arg:
 
 Connects to the specified broker. The application should call `connect` once on
 startup. If this fails (due to WiFi or the broker being unavailable) an
-`OSError` will be raised. Subsequent reconnections after outages are handled
-automatically.
+`OSError` will be raised: see
+[Connect Error Codes](./README.md#7-connect-error-codes). Subsequent
+reconnections after outages are handled automatically.
 
 ### 3.2.2 publish
 
@@ -501,6 +533,9 @@ to '8.8.8.8' and checks for a valid response.
 
 There is a single arg `packet` which is a bytes object being the DNS query. The
 default object queries the Google DNS server.
+
+Please note that this is merely a convenience method. It is not used by the
+client code and its use is entirely optional.
 
 ### 3.2.10 dprint
 
@@ -655,11 +690,6 @@ If on power up both flags are `True` the broker will discard session state
 during connectivity (and hence power) outages. This implies a loss of messages
 published during connectivity outages(MQTT spec 3.1.2.4 Clean Session).
 
-If both flags are `False` normal non-clean behaviour ensues with the potential
-for substantial backlogs after long power outages.
-
-
-
 Also discussed [here](https://github.com/peterhinch/micropython-mqtt/issues/40).
 
 ###### [Contents](./README.md#1-contents)
@@ -748,3 +778,81 @@ general solution.
 [List of public brokers](https://github.com/mqtt/mqtt.github.io/wiki/public_brokers)  
 
 ###### [Contents](./README.md#1-contents)
+
+# 7. Connect Error Codes
+
+On the initial connection attempt the broker may reject the attempt. In this
+instance an `OSError` will be raised showing two numbers. The first number
+should be `0x2002` which is the MQTT `CONNACK` fixed header. The second
+is `CONNACK` variable header byte 2 which indicates the reason for failure as
+follows:
+
+| Value | Reason                                       |
+|:------|:---------------------------------------------|
+| 1     | Unacceptable protocol version.               |
+| 2     | Client identifier rejected.                  |
+| 3     | MQTT service unavailable.                    |
+| 4     | Username or password have an invalid format. |
+| 5     | Client is not authorised to connect.         |
+
+See MQTT spec section 3.2.2.
+
+###### [Contents](./README.md#1-contents)
+
+# 8. Hive MQ
+
+The [Hive MQ](https://www.hivemq.com/) site offers a free web-based broker
+which is more secure than public brokers. With a public broker anyone can
+detect and subscribe to your publications. Hive MQ gives you a unique broker
+internet address which requires a password to access. TLS is mandatory but does
+not require certificates.
+
+A simple GitHub registration gets you:
+ * The unique broker address.
+ * You specify a username.
+ * The website supplies a password.
+
+Typical usage:
+```python
+config['user'] = 'my_username'
+config['password'] = 'my_password'
+broker = 'unique broker address'  # e.g long_hex_string.s2.eu.hivemq.cloud
+config['server'] = broker
+config['ssl'] = True
+config['ssl_params'] = {"server_hostname": broker}
+```
+The free service is scalable (at cost) to large commercial deployments.
+###### [Contents](./README.md#1-contents)
+
+# 9. The ssl_params dictionary
+
+The following are the allowable keys:
+
+ * 'key'
+ * 'cert'
+ * 'server_side'
+ * 'server_hostname'
+ * 'do_handshake'
+ * 'cert_reqs' mbedtls only
+ * 'cadata' mbedtls only
+
+According to [this post](https://github.com/orgs/micropython/discussions/10559#discussioncomment-4820939)
+the following platforms use mbedtls:
+
+ * esp32 port
+ * pico w
+ * unix port
+ * stm32
+
+See [this post](https://github.com/orgs/micropython/discussions/10801#discussioncomment-5071764)
+for details of how to use client certificates with a `mosquitto` broker.
+
+Note also that TLS with client certificates requires the cliet's clock to be
+approximately correct. This can be achieved with an NTP query. If `mosquitto`
+is run on a local server it also runs the NTP daemon. A high availability
+option is to run the NTP query against the local server. See
+[this doc](https://github.com/peterhinch/micropython-samples/blob/master/README.md#414-ntp-time),
+also [the official ntptime module](https://github.com/micropython/micropython-lib/blob/master/micropython/net/ntptime/ntptime.py).
+
+See [this link](https://github.com/JustinS-B/Mosquitto_CA_and_Certs) for
+information on creating client certificates and a Bash script for doing so.

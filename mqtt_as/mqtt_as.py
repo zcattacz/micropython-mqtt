@@ -32,7 +32,7 @@ _DEFAULT_MS = const(20)
 _SOCKET_POLL_DELAY = const(5)  # 100ms added greatly to publish latency
 
 # Legitimate errors while waiting on a socket. See uasyncio __init__.py open_connection().
-ESP32 = platform == "esp32" or platform == "esp32_LoBo"
+ESP32 = platform == "esp32"
 RP2 = platform == "rp2"
 if ESP32:
     # https://forum.micropython.org/viewtopic.php?f=16&t=3608&p=20942#p20942
@@ -167,16 +167,14 @@ class MQTT_base:
             if self._timeout(t) or not self.isconnected():
                 raise OSError(-1, "Timeout on socket read")
             try:
-                msg = sock.read(n - size)
+                msg_size = sock.readinto(buffer[size:], n - size)
             except OSError as e:  # ESP32 issues weird 119 errors here
-                msg = None
+                msg_size = None
                 if e.args[0] not in BUSY_ERRORS:
                     raise
-            if msg == b"":  # Connection closed by host
+            if msg_size == 0:  # Connection closed by host
                 raise OSError(-1, "Connection closed by host")
-            if msg is not None:  # data received
-                msg_size = len(msg)
-                buffer[size : size + msg_size] = msg
+            if msg_size is not None:  # data received
                 size += msg_size
                 t = ticks_ms()
                 self.last_rx = ticks_ms()
@@ -270,8 +268,8 @@ class MQTT_base:
         # read causes ECONNABORTED if broker is out; triggers a reconnect.
         resp = await self._as_read(4)
         self.dprint("Connected to broker.")  # Got CONNACK
-        if resp[3] != 0 or resp[0] != 0x20 or resp[1] != 0x02:
-            raise OSError(-1, "Bad CONNACK")  # Bad CONNACK e.g. authentication fail.
+        if resp[3] != 0 or resp[0] != 0x20 or resp[1] != 0x02:  # Bad CONNACK e.g. authentication fail.
+            raise OSError(-1, f"Connect fail: 0x{(resp[0] << 8) + resp[1]:04x} {resp[3]} (README 7)")
 
     async def _ping(self):
         async with self.lock:
